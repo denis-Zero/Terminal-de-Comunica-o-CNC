@@ -235,19 +235,18 @@
             word-wrap: break-word; 
             font-weight: 500;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-            padding-right: 70px; /* Espaço para o botão editar */
+            padding-right: 75px; 
         }
 
         .btn-editar-nota {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: rgba(0, 0, 0, 0.15);
+            background: rgba(0, 0, 0, 0.12);
             color: #0f172a;
-            border: 1px solid rgba(0, 0, 0, 0.2);
-            padding: 4px 8px;
-            font-size: 11px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            padding: 4px 6px;
+            font-size: 12px;
             border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
         }
         .btn-editar-nota:hover {
             background: #0f172a;
@@ -306,7 +305,7 @@
         <div class="box">
             <div class="box-header">
                 <h2>📌 Notas e Alertas Fixados</h2>
-                <button onclick="limparNotas()" class="btn-limpar" id="btn-limpar-notas" disabled>Limpar Tudo</button>
+                <button onclick="limparNotas()" class="btn-limpar" id="btn-limpar-notas">Limpar Tudo</button>
             </div>
             <div id="notes-list" class="content-area"></div>
             <textarea id="note-input" rows="2" placeholder="Escolha um modo acima primeiro..." disabled></textarea>
@@ -317,6 +316,10 @@
     <script>
         let peer = null;
         let conexao = null;
+        let notaSendoEditadaId = null; 
+
+        // Banco de dados local na memória estável do navegador
+        let bancoNotas = JSON.parse(localStorage.getItem('cnc_notas')) || [];
 
         const statusEl = document.getElementById('status');
         const chatInput = document.getElementById('chat-input');
@@ -327,7 +330,15 @@
         const btnLimparChat = document.getElementById('btn-limpar-chat');
         const btnLimparNotas = document.getElementById('btn-limpar-notas');
 
-        // Solicita permissão para notificações do sistema
+        // Carrega notas salvas imediatamente ao abrir a tela (Mesmo offline/desconectado)
+        window.addEventListener('DOMContentLoaded', () => {
+            renderizarTodasAsNotasDoBanco();
+        });
+
+        function salvarBancoNoDisque() {
+            localStorage.setItem('cnc_notas', JSON.stringify(bancoNotas));
+        }
+
         function solicitarPermissaoNotificacao() {
             if ("Notification" in window) {
                 Notification.requestPermission();
@@ -348,9 +359,7 @@
         function inicializarPeer(idEscolhido) {
             if (peer) peer.destroy();
 
-            peer = new Peer(idEscolhido, {
-                debug: 1
-            });
+            peer = new Peer(idEscolhido, { debug: 1 });
 
             peer.on('open', (id) => {
                 statusEl.innerText = "⏳ Aguardando conexão...";
@@ -377,16 +386,53 @@
                 noteInput.disabled = false;
                 noteBtn.disabled = false;
                 btnLimparChat.disabled = false;
-                btnLimparNotas.disabled = false;
                 chatInput.placeholder = "Digite uma mensagem e pressione Enter...";
                 noteInput.placeholder = "Digite uma nota importante...";
                 
                 solicitarPermissaoNotificacao();
+
+                // Sincronização automática: Envia as notas locais atuais para o outro parceiro de rede
+                conexao.send({ type: 'sync_solicitation', notas: bancoNotas });
             });
 
             conexao.on('data', (data) => {
-                renderizarMensagem(data, 'remoto');
-                dispararNotificacao(data);
+                if (data.type === 'delete_note') {
+                    bancoNotas = bancoNotas.filter(n => n.id !== data.id);
+                    salvarBancoNoDisque();
+                    removerNotaDaTela(data.id);
+                } 
+                else if (data.type === 'sync_solicitation' || data.type === 'sync_response') {
+                    // Mescla os bancos de dados pegando sempre as notas mais recentes
+                    data.notas.forEach(notaRemota => {
+                        const indexLocal = bancoNotas.findIndex(n => n.id === notaRemota.id);
+                        if (indexLocal === -1) {
+                            bancoNotas.push(notaRemota);
+                        } else if (notaRemota.timestamp > bancoNotas[indexLocal].timestamp) {
+                            bancoNotas[indexLocal] = notaRemota;
+                        }
+                    });
+                    salvarBancoNoDisque();
+                    renderizarTodasAsNotasDoBanco();
+
+                    if (data.type === 'sync_solicitation') {
+                        conexao.send({ type: 'sync_response', notas: bancoNotas });
+                    }
+                } 
+                else if (data.type === 'note') {
+                    const index = bancoNotas.findIndex(n => n.id === data.id);
+                    if (index !== -1) {
+                        bancoNotas[index] = data;
+                    } else {
+                        bancoNotas.push(data);
+                    }
+                    salvarBancoNoDisque();
+                    renderizarTodasAsNotasDoBanco();
+                    dispararNotificacao(data);
+                }
+                else {
+                    renderizarMensagem(data, 'remoto');
+                    dispararNotificacao(data);
+                }
             });
 
             conexao.on('close', () => {
@@ -396,7 +442,8 @@
                 noteInput.disabled = true;
                 noteBtn.disabled = true;
                 btnLimparChat.disabled = true;
-                btnLimparNotas.disabled = true;
+                chatInput.placeholder = "Dispositivo desconectado...";
+                noteInput.placeholder = "Dispositivo desconectado...";
             });
         }
 
@@ -410,12 +457,106 @@
         });
 
         function enviarNota() {
-            if (noteInput.value.trim() !== '' && conexao) {
-                const dados = { type: 'note', text: noteInput.value };
-                conexao.send(dados);
-                renderizarMensagem(dados, 'local');
+            if (noteInput.value.trim() !== '') {
+                let dados;
+                const origemDispositivo = document.getElementById('my-id').innerText.includes("Principal") ? 'Principal' : 'Secundário';
+                
+                if (notaSendoEditadaId) {
+                    dados = { 
+                        type: 'note', 
+                        id: notaSendoEditadaId, 
+                        text: noteInput.value, 
+                        origem: origemDispositivo,
+                        timestamp: Date.now() 
+                    };
+                    notaSendoEditadaId = null;
+                    noteBtn.innerText = "Fixar Nota";
+                    noteBtn.style.background = "var(--accent-principal)";
+                } else {
+                    const idUnico = 'nota_' + Date.now();
+                    dados = { 
+                        type: 'note', 
+                        id: idUnico, 
+                        text: noteInput.value, 
+                        origem: origemDispositivo,
+                        timestamp: Date.now() 
+                    };
+                }
+
+                // Insere ou atualiza no banco local de dados estáveis
+                const index = bancoNotas.findIndex(n => n.id === dados.id);
+                if (index !== -1) {
+                    bancoNotas[index] = dados;
+                } else {
+                    bancoNotas.push(dados);
+                }
+                
+                salvarBancoNoDisque();
+                renderizarTodasAsNotasDoBanco();
+
+                // Propaga em tempo real se a rede estiver ativa
+                if (conexao) {
+                    conexao.send(dados);
+                }
+                
                 noteInput.value = '';
             }
+        }
+
+        function renderizarTodasAsNotasDoBanco() {
+            notesList.innerHTML = '';
+            // Ordena por ordem cronológica (as mais novas primeiro)
+            bancoNotas.sort((a, b) => a.timestamp - b.timestamp);
+            
+            bancoNotas.forEach(nota => {
+                const containerEl = document.createElement('div');
+                containerEl.className = 'nota-container';
+                containerEl.id = nota.id;
+
+                const noteEl = document.createElement('div');
+                noteEl.className = 'nota';
+                noteEl.innerHTML = `<strong>📌 Nota de ${nota.origem}:</strong><br><span class="texto-nota">${nota.text.replace(/\n/g, '<br>')}</span>`;
+                
+                const areaControles = document.createElement('div');
+                areaControles.style.position = 'absolute';
+                areaControles.style.top = '8px';
+                areaControles.style.right = '8px';
+                areaControles.style.display = 'flex';
+                areaControles.style.gap = '4px';
+
+                const btnEditar = document.createElement('button');
+                btnEditar.className = 'btn-editar-nota';
+                btnEditar.innerText = '✏️';
+                btnEditar.onclick = function() {
+                    noteInput.value = nota.text;
+                    notaSendoEditadaId = nota.id;
+                    noteBtn.innerText = "Salvar Alteração";
+                    noteBtn.style.background = "var(--accent-sucesso)";
+                    noteInput.focus();
+                };
+
+                const btnApagar = document.createElement('button');
+                btnApagar.className = 'btn-editar-nota';
+                btnApagar.innerText = '🗑️';
+                btnApagar.style.color = 'var(--accent-perigo)';
+                btnApagar.style.background = 'rgba(239, 68, 68, 0.1)';
+                btnApagar.onclick = function() {
+                    if (confirm("Remover esta nota permanentemente em ambos os terminais?")) {
+                        bancoNotas = bancoNotas.filter(n => n.id !== nota.id);
+                        salvarBancoNoDisque();
+                        if (conexao) {
+                            conexao.send({ type: 'delete_note', id: nota.id });
+                        }
+                        removerNotaDaTela(nota.id);
+                    }
+                };
+
+                areaControles.appendChild(btnEditar);
+                areaControles.appendChild(btnApagar);
+                containerEl.appendChild(noteEl);
+                containerEl.appendChild(areaControles);
+                notesList.prepend(containerEl);
+            });
         }
 
         function renderizarMensagem(dados, origem) {
@@ -425,39 +566,18 @@
                 msgEl.innerText = dados.text; 
                 chatMessages.appendChild(msgEl);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
-            } 
-            else if (dados.type === 'note') {
-                const prefixo = origem === 'local' ? 'Sua' : 'Outro PC';
-                
-                const containerEl = document.createElement('div');
-                containerEl.className = 'nota-container';
-
-                const noteEl = document.createElement('div');
-                noteEl.className = 'nota';
-                noteEl.innerHTML = `<strong>📌 Nota de ${prefixo}:</strong><br><span class="texto-nota">${dados.text.replace(/\n/g, '<br>')}</span>`;
-                
-                // Botão para retornar o conteúdo para a caixa de texto
-                const btnEditar = document.createElement('button');
-                btnEditar.className = 'btn-editar-nota';
-                btnEditar.innerText = 'Editar';
-                btnEditar.onclick = function() {
-                    noteInput.value = dados.text;
-                    noteInput.focus();
-                };
-
-                containerEl.appendChild(noteEl);
-                containerEl.appendChild(btnEditar);
-                notesList.prepend(containerEl);
             }
         }
 
+        function removerNotaDaTela(idNota) {
+            const elemento = document.getElementById(idNota);
+            if (elemento) elemento.remove();
+        }
+
         function dispararNotificacao(dados) {
-            // A notificação só é exibida se o usuário não estiver com a aba focada no momento
             if (document.hidden && "Notification" in window && Notification.permission === "granted") {
                 const titulo = dados.type === 'chat' ? "💬 Nova Mensagem no CNC" : "📌 Nova Nota Fixada";
-                new Notification(titulo, {
-                    body: dados.text
-                });
+                new Notification(titulo, { body: dados.text });
             }
         }
 
@@ -468,7 +588,9 @@
         }
 
         function limparNotas() {
-            if(confirm("Deseja remover todas as notas fixadas da tela local?")) {
+            if(confirm("ATENÇÃO: Deseja apagar permanentemente TODAS as notas deste computador?")) {
+                bancoNotas = [];
+                salvarBancoNoDisque();
                 notesList.innerHTML = '';
             }
         }
