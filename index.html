@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comunicador CNC - Redes</title>
+    
+    <link rel="icon" type="image/png" href="icons/seu-icone.png">
+    
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg-principal: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --texto-principal: #f8fafc;
+            --texto-secundario: #94a3b8;
+            --cor-borda: #475569;
+            
+            --accent-principal: #38bdf8; /* Azul Moderno */
+            --accent-principal-hover: #0284c7;
+            --accent-secundario: #64748b; /* Cinza */
+            --accent-secundario-hover: #475569;
+            --accent-sucesso: #10b981; /* Verde */
+            --accent-sucesso-hover: #059669;
+            --accent-alerta: #f59e0b; /* Amarelo/Laranja */
+            --accent-perigo: #ef4444; /* Vermelho */
+            --accent-perigo-hover: #b91c1c;
+        }
+
+        body { 
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            margin: 0; 
+            padding: 24px; 
+            background: var(--bg-principal); 
+            color: var(--texto-principal);
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            box-sizing: border-box; 
+        }
+
+        h1 { 
+            text-align: center; 
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin-bottom: 24px; 
+            color: var(--texto-principal);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* Topbar de Configuração */
+        .setup-box { 
+            background: var(--bg-card); 
+            padding: 16px 24px; 
+            border-radius: 12px; 
+            border: 1px solid var(--cor-borda);
+            margin-bottom: 24px; 
+            display: flex; 
+            gap: 16px; 
+            align-items: center; 
+            justify-content: space-between; 
+            flex-wrap: wrap; 
+        }
+
+        .setup-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .status-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--cor-borda);
+        }
+
+        /* Containers Principais */
+        .container { 
+            display: flex; 
+            gap: 24px; 
+            flex: 1; 
+            min-height: 0; 
+        }
+
+        .box { 
+            flex: 1; 
+            background: var(--bg-card); 
+            padding: 20px; 
+            border-radius: 12px; 
+            border: 1px solid var(--cor-borda);
+            display: flex; 
+            flex-direction: column; 
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .box h2 {
+            font-size: 1.2rem;
+            margin: 0;
+            color: var(--texto-principal);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .content-area { 
+            flex: 1; 
+            border: 1px solid var(--cor-borda); 
+            overflow-y: auto; 
+            padding: 16px; 
+            margin-bottom: 16px; 
+            background: rgba(15, 23, 42, 0.6); 
+            border-radius: 8px; 
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Inputs e Botões */
+        input, textarea { 
+            padding: 12px; 
+            background: var(--bg-input);
+            border: 1px solid var(--cor-borda); 
+            border-radius: 8px; 
+            font-size: 14px; 
+            color: var(--texto-principal);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        input:focus, textarea:focus {
+            border-color: var(--accent-principal);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+        }
+
+        input:disabled, textarea:disabled, button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button { 
+            background: var(--accent-principal); 
+            color: #0f172a; 
+            border: none; 
+            padding: 12px 20px; 
+            cursor: pointer; 
+            border-radius: 8px; 
+            font-weight: 600; 
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        button:hover:not(:disabled) { 
+            background: var(--accent-principal-hover); 
+            transform: translateY(-1px);
+        }
+        
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-principal { background: var(--accent-sucesso); color: var(--texto-principal); }
+        .btn-principal:hover:not(:disabled) { background: var(--accent-sucesso-hover); }
+
+        .btn-secundario { background: var(--accent-secundario); color: var(--texto-principal); }
+        .btn-secundario:hover:not(:disabled) { background: var(--accent-secundario-hover); }
+
+        .btn-nota { background: var(--accent-principal); color: #0f172a; }
+        .btn-nota:hover:not(:disabled) { background: var(--accent-principal-hover); }
+
+        .btn-limpar {
+            background: transparent;
+            color: var(--texto-secundario);
+            border: 1px solid var(--cor-borda);
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-limpar:hover:not(:disabled) {
+            background: var(--accent-perigo);
+            color: white;
+            border-color: var(--accent-perigo);
+        }
+
+        /* Mensagens e Notas */
+        .msg { 
+            padding: 10px 14px; 
+            border-radius: 8px; 
+            max-width: 85%;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .msg.local {
+            background: var(--accent-principal);
+            color: #0f172a;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg.remoto {
+            background: var(--bg-input);
+            color: var(--texto-principal);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+            border: 1px solid var(--cor-borda);
+        }
+
+        .nota-container {
+            position: relative;
+            animation: surgir 0.3s ease;
+        }
+
+        .nota { 
+            background: #f59e0b; 
+            color: #0f172a;
+            padding: 14px; 
+            border-radius: 8px; 
+            word-wrap: break-word; 
+            font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+            padding-right: 70px; /* Espaço para o botão editar */
+        }
+
+        .btn-editar-nota {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.15);
+            color: #0f172a;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+        }
+        .btn-editar-nota:hover {
+            background: #0f172a;
+            color: #f59e0b;
+        }
+
+        @keyframes surgir {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .meu-id { 
+            font-weight: 600; 
+            color: var(--accent-principal); 
+            background: rgba(56, 189, 248, 0.1); 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+        }
+
+        .modo-txt { font-weight: 500; color: var(--texto-secundario); font-size: 14px; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb { background: var(--cor-borda); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--texto-secundario); }
+    </style>
+</head>
+<body>
+
+    <h1>⚡ Terminal de Comunicação CNC</h1>
+
+    <div class="setup-box">
+        <div class="setup-controls">
+            <span class="modo-txt">Configurar dispositivo:</span>
+            <button onclick="configurarComoPrincipal()" class="btn-principal">💻 PRINCIPAL (ID: 0506)</button>
+            <button onclick="configurarComoSecundario()" class="btn-secundario">💻 SECUNDÁRIO</button>
+        </div>
+        
+        <div class="status-container">
+            <span>ID: <span id="my-id" class="meu-id">Nenhum</span></span>
+            <span id="status" style="color: var(--accent-perigo); font-weight: bold;">🔴 Desconectado</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="box">
+            <div class="box-header">
+                <h2>💬 Chat de Operação</h2>
+                <button onclick="limparChat()" class="btn-limpar" id="btn-limpar-chat" disabled>Limpar Chat</button>
+            </div>
+            <div id="chat-messages" class="content-area"></div>
+            <input type="text" id="chat-input" placeholder="Escolha um modo acima primeiro..." disabled>
+        </div>
+
+        <div class="box">
+            <div class="box-header">
+                <h2>📌 Notas e Alertas Fixados</h2>
+                <button onclick="limparNotas()" class="btn-limpar" id="btn-limpar-notas" disabled>Limpar Tudo</button>
+            </div>
+            <div id="notes-list" class="content-area"></div>
+            <textarea id="note-input" rows="2" placeholder="Escolha um modo acima primeiro..." disabled></textarea>
+            <button id="note-btn" class="btn-nota" onclick="enviarNota()" style="margin-top: 10px;" disabled>Fixar Nota</button>
+        </div>
+    </div>
+
+    <script>
+        let peer = null;
+        let conexao = null;
+
+        const statusEl = document.getElementById('status');
+        const chatInput = document.getElementById('chat-input');
+        const noteInput = document.getElementById('note-input');
+        const noteBtn = document.getElementById('note-btn');
+        const chatMessages = document.getElementById('chat-messages');
+        const notesList = document.getElementById('notes-list');
+        const btnLimparChat = document.getElementById('btn-limpar-chat');
+        const btnLimparNotas = document.getElementById('btn-limpar-notas');
+
+        // Solicita permissão para notificações do sistema
+        function solicitarPermissaoNotificacao() {
+            if ("Notification" in window) {
+                Notification.requestPermission();
+            }
+        }
+
+        function configurarComoPrincipal() {
+            inicializarPeer('0506_app_local');
+            document.getElementById('my-id').innerText = "0506 (Principal)";
+        }
+
+        function configurarComoSecundario() {
+            const idAleatorio = 'secundario_' + Math.floor(1000 + Math.random() * 9000);
+            inicializarPeer(idAleatorio);
+            document.getElementById('my-id').innerText = "Secundário";
+        }
+
+        function inicializarPeer(idEscolhido) {
+            if (peer) peer.destroy();
+
+            peer = new Peer(idEscolhido, {
+                debug: 1
+            });
+
+            peer.on('open', (id) => {
+                statusEl.innerText = "⏳ Aguardando conexão...";
+                statusEl.style.color = "var(--accent-alerta)";
+
+                if (id !== '0506_app_local') {
+                    statusEl.innerText = "🔄 Conectando ao Principal...";
+                    conexao = peer.connect('0506_app_local');
+                    configurarConexao();
+                }
+            });
+
+            peer.on('connection', (conn) => {
+                conexao = conn;
+                configurarConexao();
+            });
+        }
+
+        function configurarConexao() {
+            conexao.on('open', () => {
+                statusEl.innerText = "🟢 Conectado";
+                statusEl.style.color = "var(--accent-sucesso)";
+                chatInput.disabled = false;
+                noteInput.disabled = false;
+                noteBtn.disabled = false;
+                btnLimparChat.disabled = false;
+                btnLimparNotas.disabled = false;
+                chatInput.placeholder = "Digite uma mensagem e pressione Enter...";
+                noteInput.placeholder = "Digite uma nota importante...";
+                
+                solicitarPermissaoNotificacao();
+            });
+
+            conexao.on('data', (data) => {
+                renderizarMensagem(data, 'remoto');
+                dispararNotificacao(data);
+            });
+
+            conexao.on('close', () => {
+                statusEl.innerText = "🔴 Conexão perdida";
+                statusEl.style.color = "var(--accent-perigo)";
+                chatInput.disabled = true;
+                noteInput.disabled = true;
+                noteBtn.disabled = true;
+                btnLimparChat.disabled = true;
+                btnLimparNotas.disabled = true;
+            });
+        }
+
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && chatInput.value.trim() !== '' && conexao) {
+                const dados = { type: 'chat', text: chatInput.value };
+                conexao.send(dados);
+                renderizarMensagem(dados, 'local');
+                chatInput.value = '';
+            }
+        });
+
+        function enviarNota() {
+            if (noteInput.value.trim() !== '' && conexao) {
+                const dados = { type: 'note', text: noteInput.value };
+                conexao.send(dados);
+                renderizarMensagem(dados, 'local');
+                noteInput.value = '';
+            }
+        }
+
+        function renderizarMensagem(dados, origem) {
+            if (dados.type === 'chat') {
+                const msgEl = document.createElement('div');
+                msgEl.className = `msg ${origem}`;
+                msgEl.innerText = dados.text; 
+                chatMessages.appendChild(msgEl);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } 
+            else if (dados.type === 'note') {
+                const prefixo = origem === 'local' ? 'Sua' : 'Outro PC';
+                
+                const containerEl = document.createElement('div');
+                containerEl.className = 'nota-container';
+
+                const noteEl = document.createElement('div');
+                noteEl.className = 'nota';
+                noteEl.innerHTML = `<strong>📌 Nota de ${prefixo}:</strong><br><span class="texto-nota">${dados.text.replace(/\n/g, '<br>')}</span>`;
+                
+                // Botão para retornar o conteúdo para a caixa de texto
+                const btnEditar = document.createElement('button');
+                btnEditar.className = 'btn-editar-nota';
+                btnEditar.innerText = 'Editar';
+                btnEditar.onclick = function() {
+                    noteInput.value = dados.text;
+                    noteInput.focus();
+                };
+
+                containerEl.appendChild(noteEl);
+                containerEl.appendChild(btnEditar);
+                notesList.prepend(containerEl);
+            }
+        }
+
+        function dispararNotificacao(dados) {
+            // A notificação só é exibida se o usuário não estiver com a aba focada no momento
+            if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                const titulo = dados.type === 'chat' ? "💬 Nova Mensagem no CNC" : "📌 Nova Nota Fixada";
+                new Notification(titulo, {
+                    body: dados.text
+                });
+            }
+        }
+
+        function limparChat() {
+            if(confirm("Deseja realmente limpar todo o histórico do chat local?")) {
+                chatMessages.innerHTML = '';
+            }
+        }
+
+        function limparNotas() {
+            if(confirm("Deseja remover todas as notas fixadas da tela local?")) {
+                notesList.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html>
